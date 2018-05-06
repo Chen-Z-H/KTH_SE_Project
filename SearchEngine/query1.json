@@ -1,0 +1,30 @@
+{
+	"from": 0,
+	"size": 2,
+	"query":
+	{
+		"bool":
+		{
+			 "must" : [
+			 	{
+			 		"match" :
+			 		{
+			 			"types" : "bar"
+			 		}
+			 	},
+			 	{
+			 		"match" :
+			 		{
+			 			"types" : "establishment"
+			 		}
+			 	}
+			 ],
+			 "must_not" : {
+			 	"match" : {
+			 		"types" : "restaurant"
+			 	}
+			 }
+			 
+		}
+	}
+}
