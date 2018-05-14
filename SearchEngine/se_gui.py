@@ -176,11 +176,15 @@ class Ui_MainWindow(object):
     def on_result_item_click(self, row, col):
         # cell = self.searchResultsTableWidget.item(row, col)
         doc = list(self.results.values())[row]
-        # print(doc)
-        self.contentTextEdit.setText(doc["text"])
-        self.addLog("User clicked '%s'." % doc["title"])
         categories = doc["categories"]
+        # print(doc)
+        self.contentTextEdit.setText(self._formatString("Text:", color="blue"))
+        self.addLog("User clicked '%s'." % doc["title"])
         self.updateUserProfile(userid, categories)  # Update user profile
+        self.contentTextEdit.append(doc["text"])
+        self.contentTextEdit.append("\n")
+        self.contentTextEdit.append(self._formatString("Categories:\n", color="blue"))
+        self.contentTextEdit.append("\n".join(categories))
 
     def loadUserProfile(self, userid):
         '''
@@ -209,9 +213,11 @@ class Ui_MainWindow(object):
         content = self._formatString("%s: %s\n" % (now, text), color, size)
         self.logsTextEdit.append(content)
 
-    def _formatString(self, text, color, size):
+    def _formatString(self, text, color="black", size="3"):
         return "<font size=\"" + size + "\" " \
                     "color=\"" + color + "\">" + text + "</font>"
 
+    def NDGG(self):
+        return 0
 
 
