@@ -16,6 +16,9 @@ class Ui_MainWindow(object):
         self.results = {}
         self.userprofile = {}
         self.comparator = Comparator(alpha)
+        self.mode = -1   # -1 for default tf-idf score, 0 for content-based method, 1 for query based method, 2 for combined method
+        self.currentquery = ""
+        self.update = 1     # 0 for turned off, 1 for turned on
 
     def iniWindow(self, MainWindow):
         self.setupUi(MainWindow)
@@ -24,7 +27,7 @@ class Ui_MainWindow(object):
         return 0
 
     def setupUi(self, MainWindow):
-        MainWindow.setObjectName("A very simple search engine")
+        MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1115, 690)
         MainWindow.setMinimumSize(QtCore.QSize(1115, 690))
         MainWindow.setMaximumSize(QtCore.QSize(1115, 690))
@@ -94,37 +97,79 @@ class Ui_MainWindow(object):
         self.menubar.setObjectName("menubar")
         self.menuMenu = QtWidgets.QMenu(self.menubar)
         self.menuMenu.setObjectName("menuMenu")
+        self.menuAlgorithm = QtWidgets.QMenu(self.menubar)
+        self.menuAlgorithm.setObjectName("menuAlgorithm")
         MainWindow.setMenuBar(self.menubar)
         self.actionExit = QtWidgets.QAction(MainWindow)
         self.actionExit.setObjectName("actionExit")
         self.actionExit.triggered.connect(QtWidgets.QApplication.quit)
+        self.actionDefault = QtWidgets.QAction(MainWindow)
+        self.actionDefault.setCheckable(True)
+        self.actionDefault.setChecked(True)
+        self.actionDefault.setObjectName("Default(tf-idf)")
+
+        self.actionContent_Based = QtWidgets.QAction(MainWindow)
+        self.actionContent_Based.setCheckable(True)
+        self.actionContent_Based.setObjectName("actionContent_Based")
+        self.actionQuery_Based = QtWidgets.QAction(MainWindow)
+        self.actionQuery_Based.setCheckable(True)
+        self.actionQuery_Based.setObjectName("actionQuery_Based")
+        self.actionContent_Query = QtWidgets.QAction(MainWindow)
+        self.actionContent_Query.setCheckable(True)
+        self.actionContent_Query.setObjectName("actionContent_Query")
+        self.actionContent_Based.triggered.connect(self._setModeContent)
+        self.actionQuery_Based.triggered.connect(self._setModeQuery)
+        self.actionContent_Query.triggered.connect(self._setModeContentQuery)
+        self.actionDefault.triggered.connect(self._setModeDefault)
+
+        self.actionUpdate = QtWidgets.QAction(MainWindow)
+        self.actionUpdate.setCheckable(True)
+        self.actionUpdate.setChecked(True)
+        print(self.actionUpdate.isChecked())
+        self.actionUpdate.setObjectName("update")
+        self.actionUpdate.triggered.connect(self._setUpdate)
+
         self.menuMenu.addAction(self.actionExit)
+        self.menuAlgorithm.addAction(self.actionDefault)
+        self.menuAlgorithm.addAction(self.actionContent_Based)
+        self.menuAlgorithm.addAction(self.actionQuery_Based)
+        self.menuAlgorithm.addAction(self.actionContent_Query)
+        self.menuAlgorithm.addAction(self.actionUpdate)
         self.menubar.addAction(self.menuMenu.menuAction())
+        self.menubar.addAction(self.menuAlgorithm.menuAction())
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "A very simple search engine"))
         self.groupBox.setTitle(_translate("MainWindow", "Search"))
         self.searchPushButton.setText(_translate("MainWindow", "Go"))
         self.groupBox_2.setTitle(_translate("MainWindow", "Content"))
         self.groupBox_3.setTitle(_translate("MainWindow", "Logs"))
         self.groupBox_4.setTitle(_translate("MainWindow", "Results"))
         self.menuMenu.setTitle(_translate("MainWindow", "Menu"))
+        self.menuAlgorithm.setTitle(_translate("MainWindow", "Algorithm"))
         self.actionExit.setText(_translate("MainWindow", "Exit"))
+        self.actionDefault.setText(_translate("MainWindow", "Default"))
+        self.actionContent_Based.setText(_translate("MainWindow", "Content-Based"))
+        self.actionQuery_Based.setText(_translate("MainWindow", "Query-Based"))
+        self.actionContent_Query.setText(_translate("MainWindow", "Content+Query"))
+        self.actionUpdate.setText(_translate("MainWindow", "Update profile"))
 
     def query(self):
         query_words = self.queryLineEdit.text()
         if query_words == "" or query_words.isspace():
             self.addLog("Invalid query!", color="red")
         else:
-            ret = elasticioEx.addQueryHistory(userid, query_words)
-            if ret == 1:
-                self.addLog("Query recorded", color="blue")
-            else:
-                self.addLog("Query adding failed!", color="red")
+            self.currentquery = query_words
+            if self.update == 1:
+                ret = elasticioEx.addQueryHistory(userid, query_words, "")
+                if ret == 1:
+                    self.addLog("Query recorded", color="blue")
+                else:
+                    self.addLog("Query adding failed!", color="red")
             '''
             Search here
             '''
@@ -137,7 +182,8 @@ class Ui_MainWindow(object):
                 self.addLog("No results to display!", color="red")
                 return
 
-            self.rerank(hits)    # rerank
+            if self.mode != -1:
+                self.rerank(query_words)    # rerank
 
             rank = 1
             # print(self.results)
@@ -154,7 +200,7 @@ class Ui_MainWindow(object):
                     break
             self.addLog("User searched '%s'." % query_words)
 
-    def rerank(self, hits):
+    def rerank(self, query):
         '''
         Rerank the search results
         :return: reranked documents
@@ -169,19 +215,44 @@ class Ui_MainWindow(object):
         #
         # for k in self.results.keys():
         #     self.comparator.cosine_sim(user_cv, art_cvs[k])
-        self.results = self.comparator.rerank(self.results, self.userprofile)
-        result_list = sorted(self.results.items(), key=lambda x: x[1]['score'], reverse=True)
-        self.results = dict(result_list)
+
+        if self.mode == 0:
+            # content-based
+            self.results = self.comparator.rerank(self.results, self.userprofile)
+            result_list = sorted(self.results.items(), key=lambda x: x[1]['score'], reverse=True)
+            self.results = dict(result_list)
+            self.addLog("Reranked by content-based method.", color="blue")
+        elif self.mode == 1:
+            # query-based
+            sh = elasticioEx.getUserHistory(userid)
+            self.results = self.comparator.LucBoost(self.results, query, sh)
+            self.results = dict(self.results)
+            self.addLog("Reranked by query-based method.", color="blue")
+        elif self.mode == 2:
+            # content+query
+            self.results = self.comparator.rerank(self.results, self.userprofile)
+            result_list = sorted(self.results.items(), key=lambda x: x[1]['score'], reverse=True)
+            self.results = dict(result_list)
+            sh = elasticioEx.getUserHistory(userid)
+            self.results = self.comparator.LucBoost(self.results, query, sh)
+            self.results = dict(self.results)
+            self.addLog("Reranked by combined method.", color="blue")
 
     def on_result_item_click(self, row, col):
         # cell = self.searchResultsTableWidget.item(row, col)
         doc = list(self.results.values())[row]
+        docid = list(self.results.keys())[row]
         categories = doc["categories"]
+        if self.update == 1:
+            ret = elasticioEx.addQueryHistory(userid, self.currentquery, docid)     # record the clickthrough of query here
+            self.updateUserProfile(userid, categories)  # Update user profile
+
         # print(doc)
         self.contentTextEdit.setText(self._formatString("Text:", color="blue"))
         self.addLog("User clicked '%s'." % doc["title"])
-        self.updateUserProfile(userid, categories)  # Update user profile
         self.contentTextEdit.append(doc["text"])
+        # print(doc["title"] + ": " + docid)
+
         self.contentTextEdit.append("\n")
         self.contentTextEdit.append(self._formatString("Categories:\n", color="blue"))
         self.contentTextEdit.append("\n".join(categories))
@@ -217,7 +288,48 @@ class Ui_MainWindow(object):
         return "<font size=\"" + size + "\" " \
                     "color=\"" + color + "\">" + text + "</font>"
 
-    def NDGG(self):
-        return 0
+    def _setModeContent(self):
+        self.mode = 0
+        self.addLog("User set mode as 'content-based'.", color="green")
+        self.actionDefault.setChecked(False)
+        self.actionContent_Based.setChecked(True)
+        self.actionQuery_Based.setChecked(False)
+        self.actionContent_Query.setChecked(False)
+
+    def _setModeQuery(self):
+        self.mode = 1
+        self.addLog("User set mode as 'query-based'.", color="green")
+        self.actionDefault.setChecked(False)
+        self.actionContent_Based.setChecked(False)
+        self.actionQuery_Based.setChecked(True)
+        self.actionContent_Query.setChecked(False)
+
+    def _setModeContentQuery(self):
+        self.mode = 2
+        self.addLog("User set mode as 'content+query'.", color="green")
+        self.actionDefault.setChecked(False)
+        self.actionContent_Based.setChecked(False)
+        self.actionQuery_Based.setChecked(False)
+        self.actionContent_Query.setChecked(True)
+
+    def _setModeDefault(self):
+        self.mode = -1
+        self.addLog("User set mode as 'Default(tf-idf)'.", color="green")
+        self.actionDefault.setChecked(True)
+        self.actionContent_Based.setChecked(False)
+        self.actionQuery_Based.setChecked(False)
+        self.actionContent_Query.setChecked(False)
+
+    def _setUpdate(self):
+        if self.update == 1:
+            self.update = 0
+            self.actionUpdate.setChecked(False)
+            self.addLog("User turned off updating", color="green")
+            print("User turned off updating")
+        else:
+            self.update = 1
+            self.actionUpdate.setChecked(True)
+            self.addLog("User turned on updating", color="green")
+            print("User turned on updating")
 
 
